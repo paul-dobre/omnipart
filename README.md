@@ -1,4 +1,4 @@
-# OmniPart: Part-Aware 3D Generation with Semantic Decoupling and Structural Cohesion
+# OmniPart: Part-Aware 3D Generation with Semantic Decoupling and Structural Cohesion [SIGGRAPH Asia 2025]
 
 <div align="center">
 
