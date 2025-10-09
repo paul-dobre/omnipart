@@ -14,7 +14,7 @@
 ## 🔥 Updates
 
 ### 📅 October 2025
-- Pretrained models, interactive demo, training code and data processing.
+- Pretrained models, interactive demo, training code and data processing. 
 
 ## 🔨 Installation
 
