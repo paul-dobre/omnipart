@@ -10,21 +10,28 @@ from modules.part_synthesis.process_utils import save_parts_outputs
 from modules.inference_utils import load_img_mask, prepare_bbox_gen_input, prepare_part_synthesis_input, gen_mesh_from_bounds, vis_voxel_coords, merge_parts
 from modules.part_synthesis.pipelines import OmniPartImageTo3DPipeline
 
+from huggingface_hub import hf_hub_download
+
 if __name__ == "__main__":
     device = "cuda"
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--image-input", type=str, required=True)
-    parser.add_argument("--mask-input", type=str, required=True)
-    parser.add_argument("--output-root", type=str, default="./output")
+    parser.add_argument("--image_input", type=str, required=True)
+    parser.add_argument("--mask_input", type=str, required=True)
+    parser.add_argument("--output_root", type=str, default="./output")
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--num-inference-steps", type=int, default=25)
-    parser.add_argument("--guidance-scale", type=float, default=7.5)
+    parser.add_argument("--num_inference_steps", type=int, default=25)
+    parser.add_argument("--guidance_scale", type=float, default=7.5)
     parser.add_argument("--simplify_ratio", type=float, default=0.3)
     parser.add_argument("--partfield_encoder_path", type=str, default="ckpt/model_objaverse.ckpt")
     parser.add_argument("--bbox_gen_ckpt", type=str, default="ckpt/bbox_gen.ckpt")
-    parser.add_argument("--part_synthesis_ckpt", type=str, default="ckpt/part_synthesis")
+    parser.add_argument("--part_synthesis_ckpt", type=str, default="omnipart/OmniPart")
     args = parser.parse_args()
+
+    if not os.path.exists(args.partfield_encoder_path):
+        args.partfield_encoder_path = hf_hub_download(repo_id="omnipart/OmniPart_modules", filename="partfield_encoder.ckpt", local_dir="ckpt")
+    if not os.path.exists(args.bbox_gen_ckpt):
+        args.bbox_gen_ckpt = hf_hub_download(repo_id="omnipart/OmniPart_modules", filename="bbox_gen.ckpt", local_dir="ckpt")
 
     os.makedirs(args.output_root, exist_ok=True)
     output_dir = os.path.join(args.output_root, args.image_input.split("/")[-1].split(".")[0])
