@@ -166,7 +166,7 @@ class ImageConditionedMixin:
         """
         self.image_size = image_size
         super().__init__(roots, **kwargs)
-        self.img_data_root = "/mnt/pfs/data/vast_annotated_processed_part_v3/render_fix_animation"
+        self.img_data_root = ""
     
     def filter_metadata(self, metadata):
         """
