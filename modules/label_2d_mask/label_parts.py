@@ -25,7 +25,7 @@ from PIL import Image
 from torchvision.transforms import functional as F
 from torchvision import transforms
 import torch.nn.functional as F_nn
-from segment_anything import SamAutomaticMaskGenerator, build_sam
+from segment_anything import SamPredictor, build_sam
 from modules.label_2d_mask.visualizer import Visualizer
 
 # Minimum size threshold for considering a segment (in pixels)
@@ -245,8 +245,9 @@ def split_disconnected_parts(group_ids, size_threshold=None):
 # MAIN SEGMENTATION FUNCTION
 # -------------------------------------------------------
 
-def get_sam_mask(image, mask_generator, visual, merge_groups=None, existing_group_ids=None, 
-                check_undetected=True, rgba_image=None, img_name=None, skip_split=False, save_dir=None, size_threshold=None):
+def get_sam_mask(image, mask_generator, visual, merge_groups=None, existing_group_ids=None,
+                check_undetected=True, rgba_image=None, img_name=None, skip_split=False, save_dir=None, size_threshold=None,
+                masks=None, mask_predictor=None, prompt_inputs=None):
     """
     Generate and process SAM masks for the image, with optional merging and undetected region detection.
     
@@ -269,7 +270,15 @@ def get_sam_mask(image, mask_generator, visual, merge_groups=None, existing_grou
         exist_group = True
     else:
         # Generate masks using SAM
-        masks = mask_generator.generate(image)
+        if masks is None:
+            if callable(mask_predictor):
+                masks = mask_predictor(prompt_inputs) if prompt_inputs is not None else mask_predictor()
+            elif mask_generator is not None and hasattr(mask_generator, "generate"):
+                masks = mask_generator.generate(image)
+            else:
+                masks = []
+
+        
         group_ids = np.full((image.shape[0], image.shape[1]), -1, dtype=int)
         num_masks = len(masks)
         group_counter = 0

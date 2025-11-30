@@ -9,7 +9,7 @@ import torch
 from PIL import Image
 import cv2
 import shutil
-from segment_anything import SamAutomaticMaskGenerator, build_sam
+from segment_anything import SamPredictor, build_sam
 from omegaconf import OmegaConf
 
 from modules.bbox_gen.models.autogressive_bbox_gen import BboxGen
@@ -35,7 +35,7 @@ MAX_SEED = np.iinfo(np.int32).max
 TMP_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tmp")
 os.makedirs(TMP_ROOT, exist_ok=True)
 
-sam_mask_generator = None
+sam_predictor = None
 rmbg_model = None
 bbox_gen_model = None
 part_synthesis_pipeline = None
@@ -44,11 +44,11 @@ size_th = DEFAULT_SIZE_TH
 
 
 def prepare_models(sam_ckpt_path, partfield_ckpt_path, bbox_gen_ckpt_path):
-    global sam_mask_generator, rmbg_model, bbox_gen_model, part_synthesis_pipeline
-    if sam_mask_generator is None:
+    global sam_predictor, rmbg_model, bbox_gen_model, part_synthesis_pipeline
+    if sam_predictor is None:
         print("Loading SAM model...")
         sam_model = build_sam(checkpoint=sam_ckpt_path).to(device=DEVICE)
-        sam_mask_generator = SamAutomaticMaskGenerator(sam_model)
+        sam_predictor = SamPredictor(sam_model)
     
     if rmbg_model is None:
         print("Loading BriaRMBG 2.0 model...")
@@ -72,11 +72,83 @@ def prepare_models(sam_ckpt_path, partfield_ckpt_path, bbox_gen_ckpt_path):
     
     print("Models ready")
 
+def _format_point_prompts(prompt_points):
+    if not prompt_points:
+        return None, None
+
+    coords = []
+    labels = []
+    for point in prompt_points:
+        if isinstance(point, dict):
+            x, y = point.get("x"), point.get("y")
+            label = point.get("label", 1)
+        else:
+            if len(point) < 2:
+                continue
+            x, y = point[0], point[1]
+            label = point[2] if len(point) > 2 else 1
+
+        if x is None or y is None:
+            continue
+
+        coords.append([x, y])
+        labels.append(int(label))
+
+    if not coords:
+        return None, None
+
+    return np.array(coords, dtype=np.float32), np.array(labels, dtype=np.int32)
+
+
+def _format_box_prompts(prompt_boxes):
+    if not prompt_boxes:
+        return None
+
+    boxes = []
+    for box in prompt_boxes:
+        if isinstance(box, dict):
+            coords = [box.get("x0"), box.get("y0"), box.get("x1"), box.get("y1")]
+        else:
+            coords = list(box)
+
+        if len(coords) < 4 or any(c is None for c in coords):
+            continue
+        boxes.append(coords[:4])
+
+    if not boxes:
+        return None
+
+    return np.array(boxes, dtype=np.float32)
+
+
+def _convert_masks_to_dicts(masks, scores, boxes=None):
+    mask_dicts = []
+    for idx, mask in enumerate(masks):
+        segmentation = mask.astype(bool)
+        area = int(segmentation.sum())
+        bbox = None
+        if boxes is not None:
+            bbox = boxes[idx] if len(boxes.shape) == 2 else boxes
+
+        mask_dicts.append({
+            "segmentation": segmentation,
+            "area": area,
+            "score": float(scores[idx]) if scores is not None else None,
+            "bbox": bbox
+        })
+
+    return mask_dicts
+
+
+
+
 
 @spaces.GPU
-def process_image(image_path, threshold, req: gr.Request):
+
+
+def process_image(image_path, threshold, prompt_points=None, prompt_boxes=None, req: gr.Request = None):
     """Process image and generate initial segmentation"""
-    global size_th
+    global size_th, sam_predictor
 
     user_dir = os.path.join(TMP_ROOT, str(req.session_hash))
     os.makedirs(user_dir, exist_ok=True)
@@ -97,7 +169,36 @@ def process_image(image_path, threshold, req: gr.Request):
     processed_image.save(rgba_path)
     
     print("Generating raw SAM masks without post-processing...")
-    raw_masks = sam_mask_generator.generate(image)
+
+    point_coords, point_labels = _format_point_prompts(prompt_points)
+    boxes = _format_box_prompts(prompt_boxes)
+
+    raw_masks = []
+    if sam_predictor is not None and (boxes is not None or point_coords is not None):
+        sam_predictor.set_image(image)
+
+        if boxes is not None:
+            for box in boxes:
+                masks, scores, _ = sam_predictor.predict(
+                    point_coords=point_coords,
+                    point_labels=point_labels,
+                    box=box,
+                    multimask_output=True
+                )
+                raw_masks.extend(_convert_masks_to_dicts(masks, scores, boxes=np.array([box] * len(masks))))
+        else:
+            masks, scores, _ = sam_predictor.predict(
+                point_coords=point_coords,
+                point_labels=point_labels,
+                box=None,
+                multimask_output=True
+            )
+            raw_masks.extend(_convert_masks_to_dicts(masks, scores))
+    else:
+        print("No prompts provided; skipping SAM prediction.")
+
+
+
     
     raw_sam_vis = np.copy(image)
     raw_sam_vis = np.ones_like(image) * 255
@@ -120,13 +221,14 @@ def process_image(image_path, threshold, req: gr.Request):
     
     group_ids, pre_merge_im = get_sam_mask(
         image, 
-        sam_mask_generator, 
+        sam_predictor, 
         visual, 
         merge_groups=None, 
         rgba_image=processed_image,
         img_name=img_name,
         save_dir=user_dir,
-        size_threshold=size_th
+        size_threshold=size_th,
+        masks = raw_masks
     )
     
     pre_merge_path = os.path.join(user_dir, f"{img_name}_mask_pre_merge.png")
@@ -181,7 +283,7 @@ def process_image(image_path, threshold, req: gr.Request):
 
 def apply_merge(merge_input, state, req: gr.Request):
     """Apply merge parameters and generate merged segmentation"""
-    global sam_mask_generator
+    global sam_predictor
     
     if not state:
         return None, None, state
@@ -237,7 +339,7 @@ def apply_merge(merge_input, state, req: gr.Request):
     # Add skip_split=True to prevent splitting after merging
     new_group_ids, merged_im = get_sam_mask(
         image, 
-        sam_mask_generator, 
+        sam_predictor, 
         visual, 
         merge_groups=merge_groups, 
         existing_group_ids=group_ids,

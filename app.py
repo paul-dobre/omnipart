@@ -15,19 +15,19 @@ from app_utils import (
 )
 
 EXAMPLES = [
-    ["assets/example_data/knight.png", 1800, "6,0,26,20,7;13,1,22,11,12,2,21,27,3,24,23;5,18;4,17;19,16,14,25,28", 42],
-    ["assets/example_data/car.png", 2000, "12,10,2,11;1,7", 42],
-    ["assets/example_data/warhammer.png", 1800, "7,1,0,8", 0],
-    ["assets/example_data/snake.png", 3000, "2,3;0,1;4,5,6,7", 42],
-    ["assets/example_data/Batman.png", 1800, "4,5", 42],
-    ["assets/example_data/robot1.jpeg", 1600, "0,5;10,14,3;1,12,2;13,11,4;7,15", 42],
-    ["assets/example_data/astronaut.png", 2000, "0,4,6;1,8,9,7;2,5", 42],
-    ["assets/example_data/crossbow.jpg", 2000, "2,9;10,12,0,7,11,8,13;4,3", 42],
-    ["assets/example_data/robot.jpg", 1600, "7,19;15,0;6,18", 42],
-    ["assets/example_data/robot_dog.jpg", 1000, "21,9;2,12,10,15,17;11,7;1,0;13,19;4,16", 0],
-    ["assets/example_data/crossbow.jpg", 1600, "9,2;10,15,13;7,14,8,11;0,12,16;5,3,1", 42],
-    ["assets/example_data/robot.jpg", 1800, "1,2,3,5,4,16,17;11,7,19;10,14;18,6,0,15;13,9;12,8", 0],
-    ["assets/example_data/robot_dog.jpg", 1000, "2,12,10,15,17,8,3,5,13,19,6,14;11,7;1,0,21,9,11;4,16", 0],
+    ["assets/example_data/knight.png", 1800, "", "", "6,0,26,20,7;13,1,22,11,12,2,21,27,3,24,23;5,18;4,17;19,16,14,25,28", 42],
+    ["assets/example_data/car.png", 2000, "", "", "12,10,2,11;1,7", 42],
+    ["assets/example_data/warhammer.png", 1800, "", "", "7,1,0,8", 0],
+    ["assets/example_data/snake.png", 3000, "", "", "2,3;0,1;4,5,6,7", 42],
+    ["assets/example_data/Batman.png", 1800, "", "", "4,5", 42],
+    ["assets/example_data/robot1.jpeg", 1600, "", "", "0,5;10,14,3;1,12,2;13,11,4;7,15", 42],
+    ["assets/example_data/astronaut.png", 2000, "", "", "0,4,6;1,8,9,7;2,5", 42],
+    ["assets/example_data/crossbow.jpg", 2000, "", "", "2,9;10,12,0,7,11,8,13;4,3", 42],
+    ["assets/example_data/robot.jpg", 1600, "", "", "7,19;15,0;6,18", 42],
+    ["assets/example_data/robot_dog.jpg", 1000, "", "", "21,9;2,12,10,15,17;11,7;1,0;13,19;4,16", 0],
+    ["assets/example_data/crossbow.jpg", 1600, "", "", "9,2;10,15,13;7,14,8,11;0,12,16;5,3,1", 42],
+    ["assets/example_data/robot.jpg", 1800, "", "", "1,2,3,5,4,16,17;11,7,19;10,14;18,6,0,15;13,9;12,8", 0],
+    ["assets/example_data/robot_dog.jpg", 1000, "", "", "2,12,10,15,17,8,3,5,13,19,6,14;11,7;1,0,21,9,11;4,16", 0],
 ]
 
 HEADER = """
@@ -82,6 +82,25 @@ with gr.Blocks(title="OmniPart") as demo:
                 label="Minimum Segment Size (pixels)",
                 info="Segments smaller than this will be ignored"
             )
+
+
+            gr.Markdown("### Prompt Controls")
+
+            point_prompts = gr.Textbox(
+                label="Point Prompts",
+                placeholder="x,y,label; x,y,label",
+                lines=2,
+                info="Optional point prompts as comma-separated triples (label defaults to 1)",
+            )
+
+            box_prompts = gr.Textbox(
+                label="Box Prompts",
+                placeholder="x1,y1,x2,y2; x1,y1,x2,y2",
+                lines=2,
+                info="Optional box prompts as comma-separated quadruples",
+            )
+
+
             
             gr.Markdown("### Merge Controls")
             merge_input = gr.Textbox(
@@ -134,7 +153,7 @@ with gr.Blocks(title="OmniPart") as demo:
     with gr.Row():
         examples = gr.Examples(
             examples=EXAMPLES,
-            inputs=[input_image, size_threshold, merge_input, seed_slider],
+            inputs=[input_image, size_threshold, point_prompts, box_prompts, merge_input, seed_slider],
             cache_examples=False,
         )
 
@@ -143,7 +162,7 @@ with gr.Blocks(title="OmniPart") as demo:
 
     segment_btn.click(
         process_image,
-        inputs=[input_image, size_threshold],
+        inputs=[input_image, size_threshold, point_prompts, box_prompts],
         outputs=[initial_seg, pre_merge_vis, state]
     )
     
@@ -161,7 +180,7 @@ with gr.Blocks(title="OmniPart") as demo:
 
     run_example_btn.click(
         fn=process_image,
-        inputs=[input_image, size_threshold],
+        inputs=[input_image, size_threshold, point_prompts, box_prompts],
         outputs=[initial_seg, pre_merge_vis, state]
     ).then(
         fn=apply_merge,
