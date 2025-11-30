@@ -72,6 +72,36 @@ def prepare_models(sam_ckpt_path, partfield_ckpt_path, bbox_gen_ckpt_path):
     
     print("Models ready")
 
+
+
+def _parse_prompt_points(prompt_points):
+    """Parse raw point prompt input (including string formats) into list form."""
+    if isinstance(prompt_points, str):
+        parsed_points = []
+        for entry in prompt_points.split(';'):
+            entry = entry.strip()
+            if not entry:
+                continue
+
+            parts = [p.strip() for p in entry.split(',') if p.strip()]
+            if len(parts) < 2:
+                print(f"Skipping point prompt '{entry}': expected at least two values (x,y[,label])")
+                continue
+
+            try:
+                x = float(parts[0])
+                y = float(parts[1])
+                label = int(float(parts[2])) if len(parts) > 2 else 1
+                parsed_points.append([x, y, label])
+            except ValueError as exc:
+                print(f"Skipping point prompt '{entry}': unable to parse numbers ({exc})")
+                continue
+
+        return parsed_points
+
+    return prompt_points
+
+
 def _format_point_prompts(prompt_points):
     if not prompt_points:
         return None, None
@@ -98,6 +128,33 @@ def _format_point_prompts(prompt_points):
         return None, None
 
     return np.array(coords, dtype=np.float32), np.array(labels, dtype=np.int32)
+
+
+
+def _parse_prompt_boxes(prompt_boxes):
+    """Parse raw box prompt input (including string formats) into list form."""
+    if isinstance(prompt_boxes, str):
+        parsed_boxes = []
+        for entry in prompt_boxes.split(';'):
+            entry = entry.strip()
+            if not entry:
+                continue
+
+            parts = [p.strip() for p in entry.split(',') if p.strip()]
+            if len(parts) < 4:
+                print(f"Skipping box prompt '{entry}': expected four values (x0,y0,x1,y1)")
+                continue
+
+            try:
+                coords = [float(val) for val in parts[:4]]
+                parsed_boxes.append(coords)
+            except ValueError as exc:
+                print(f"Skipping box prompt '{entry}': unable to parse numbers ({exc})")
+                continue
+
+        return parsed_boxes
+
+    return prompt_boxes
 
 
 def _format_box_prompts(prompt_boxes):
@@ -170,8 +227,11 @@ def process_image(image_path, threshold, prompt_points=None, prompt_boxes=None, 
     
     print("Generating raw SAM masks without post-processing...")
 
-    point_coords, point_labels = _format_point_prompts(prompt_points)
-    boxes = _format_box_prompts(prompt_boxes)
+    parsed_points = _parse_prompt_points(prompt_points)
+    parsed_boxes = _parse_prompt_boxes(prompt_boxes)
+
+    point_coords, point_labels = _format_point_prompts(parsed_points)
+    boxes = _format_box_prompts(parsed_boxes)
 
     raw_masks = []
     if sam_predictor is not None and (boxes is not None or point_coords is not None):
